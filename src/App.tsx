@@ -72,6 +72,7 @@ const formatTime = (d: string) => {
 
 function App() {
   const [history, setHistory] = useState<HistoryItem[]>([]);
+  const [pendingDeleteIds, setPendingDeleteIds] = useState<Set<number>>(new Set());
   const [searchText, setSearchText] = useState("");
   const [activeTab, setActiveTab] = useState('all');
   const [renderTab, setRenderTab] = useState('all');
@@ -406,7 +407,17 @@ function App() {
   const handleImageUpload = (e: React.ChangeEvent<HTMLInputElement>) => { const file = e.target.files?.[0]; if (!file) return; const reader = new FileReader(); reader.onload = async (event) => { const base64 = event.target?.result as string; if (base64) { await invoke("send_to_phone", { content: base64 }); setChatMessages(p => [...p, { text: base64, isMe: true }]); } }; reader.readAsDataURL(file); e.target.value = ''; };
   const handleChatPaste = (e: React.ClipboardEvent) => { const items = e.clipboardData.items; for (let i = 0; i < items.length; i++) { if (items[i].type.indexOf("image") !== -1) { e.preventDefault(); const blob = items[i].getAsFile(); if (blob) { const reader = new FileReader(); reader.onload = async (event) => { const base64 = event.target?.result as string; if (base64) { await invoke("send_to_phone", { content: base64 }); setChatMessages(p => [...p, { text: base64, isMe: true }]); } }; reader.readAsDataURL(blob); } return; } } };
   const handleChatKeyDown = (e: React.KeyboardEvent) => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); handlePcSend(); } };
-  async function handleDelete(e: React.MouseEvent, id: number) { e.stopPropagation(); await invoke("delete_item", { id }); setHistory(p => p.filter(i => i.id !== id)); }
+  async function handleDelete(e: React.MouseEvent, id: number) {
+    e.stopPropagation();
+    setPendingDeleteIds(prev => new Set(prev).add(id));
+    try {
+      await invoke("delete_item", { id });
+    } catch (err) {
+      console.error("delete_item failed:", err);
+    }
+    setHistory(p => p.filter(i => i.id !== id));
+    setPendingDeleteIds(prev => { const next = new Set(prev); next.delete(id); return next; });
+  }
   async function handleClearAll() { setShowDeleteModal(true); }
   const closeDeleteModal = () => setShowDeleteModal(false);
 
@@ -481,6 +492,7 @@ function App() {
   const handleTranslateSelection = async () => { if (!textareaRef.current || isTranslating) return; if (selectionRestore) { const { start, translatedLength, originalText } = selectionRestore; const end = start + translatedLength; const newContent = viewerContent.substring(0, start) + originalText + viewerContent.substring(end); setViewerContent(newContent); setSelectionRestore(null); return; } const textarea = textareaRef.current; const start = textarea.selectionStart; const end = textarea.selectionEnd; if (start === end) return; const selectedText = viewerContent.substring(start, end); setIsTranslating(true); try { const translatedText = await invoke<string>('translate_text', { content: selectedText }); const newContent = viewerContent.substring(0, start) + translatedText + viewerContent.substring(end); setViewerContent(newContent); setSelectionRestore({ start: start, translatedLength: translatedText.length, originalText: selectedText }); } catch (err) { console.error(err); } setIsTranslating(false); };
 
   const filteredHistory = history.filter((item) => {
+    if (pendingDeleteIds.has(item.id)) return false;
     if (renderTab === 'custom') { if (['text', 'image', 'code'].includes(item.category)) return false; }
     else if (renderTab !== 'all') { if (item.category !== renderTab) return false; }
     if (!searchText) return true;
@@ -849,7 +861,6 @@ function App() {
               <div className="empty-state"><Icon name="text" size={48} style={{opacity:0.3, marginBottom:10}} /><div>{searchText ? "无匹配" : "无记录"}</div></div>
             ) : (
               <div className="cards-container" key={renderTab}>
-                <AnimatePresence initial={false} mode="popLayout">
                   {renderedHistory.map((item) => {
                     const isTranslated = !!translations[item.id];
                     const contentToShow = isTranslated ? translations[item.id]! : item.content;
@@ -857,21 +868,8 @@ function App() {
                     const queueIndex = queueIds.indexOf(item.id);
 
                     return (
-                      <motion.div
+                      <div
                         key={item.id}
-                        layout
-                        layoutId={`card-${item.id}`}
-                        initial={{ opacity: 0, scale: 0.9, height: 0 }}
-                        animate={{ opacity: 1, scale: 1, height: 'auto' }}
-                        exit={{
-                          opacity: 0,
-                          scale: 0.5,
-                          height: 0,
-                          transition: { duration: 0.2 }
-                        }}
-                        transition={{ type: "spring", stiffness: 400, damping: 30 }}
-                        whileHover={{ scale: 1.005 }}
-                        whileTap={{ scale: 0.98 }}
                         className="card"
                         onClick={() => handleCopy(item)}
                       >
@@ -904,10 +902,9 @@ function App() {
                             <Icon name="trash" size={14} />
                           </motion.button>
                         </div>
-                      </motion.div>
+                      </div>
                     );
                   })}
-                </AnimatePresence>
               </div>
             )}
           </div>

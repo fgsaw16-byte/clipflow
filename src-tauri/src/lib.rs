@@ -1,6 +1,6 @@
 use tauri::{Manager, Emitter, AppHandle, Size, LogicalSize, WebviewWindow, WindowEvent};
 use arboard::{Clipboard, ImageData}; 
-use std::{thread, time::Duration, sync::{Mutex, Arc, atomic::{AtomicBool, Ordering}}, collections::HashMap};
+use std::{thread, time::Duration, sync::{Mutex, Arc, atomic::{AtomicBool, Ordering}}, collections::{HashMap, HashSet}};
 use std::fs;
 use std::path::PathBuf;
 use std::process::Command;
@@ -211,6 +211,9 @@ struct AppState {
     monitor_hwnd: Arc<Mutex<isize>>,
     #[cfg(target_os = "windows")]
     last_external_handle: Arc<Mutex<isize>>,
+    /// Signatures of content recently deleted by the user.
+    /// Prevents force_sync from re-inserting clipboard content that the user just deleted.
+    recently_deleted_sigs: Arc<Mutex<HashSet<String>>>,
 }
 
 
@@ -770,14 +773,39 @@ fn force_sync(app: AppHandle, state: tauri::State<'_, AppState>) -> Result<Vec<H
     *safe_lock(&state.is_internal_pasting) = false;
     *safe_lock(&state.ignore_signature) = None;
 
-    // Step 2: Force-read clipboard (independent of monitor thread)
+    // Step 2: Independently read clipboard content.
+    // Uses recently_deleted_sigs to prevent ghost resurrection of user-deleted items.
     #[cfg(target_os = "windows")]
     {
         match Clipboard::new() {
             Ok(mut cb) => {
-                let mut last_seq: u32 = 0;
-                let mut last_img: usize = 0;
-                let _ = read_and_persist_clipboard(state.inner(), &app, &mut cb, &mut last_seq, &mut last_img);
+                // Try to read current clipboard text
+                if let Ok(text) = cb.get_text() {
+                    if !text.is_empty() {
+                        let sig = signature_for(&text);
+                        let is_deleted = safe_lock(&state.recently_deleted_sigs).contains(&sig);
+                        if !is_deleted {
+                            let db = get_db_path(&app);
+                            if let Ok(conn) = Connection::open(&db) {
+                                // Only insert if this exact content is not already the latest entry
+                                let already_exists: bool = conn.query_row(
+                                    "SELECT COUNT(*) > 0 FROM history WHERE content = ?1",
+                                    params![text], |r| r.get(0)
+                                ).unwrap_or(true);
+                                if !already_exists {
+                                    let cat = detect_category(&text);
+                                    let _ = conn.execute(
+                                        "INSERT INTO history (content, category) VALUES (?1, ?2)",
+                                        params![text, cat],
+                                    );
+                                    println!("[clipflow][force_sync] Inserted missed clipboard content");
+                                }
+                            }
+                        } else {
+                            println!("[clipflow][force_sync] Skipped clipboard content (recently deleted by user)");
+                        }
+                    }
+                }
             }
             Err(e) => {
                 println!("[clipflow][force_sync] ⚠️ Clipboard::new() failed: {} — continuing anyway", e);
@@ -785,7 +813,7 @@ fn force_sync(app: AppHandle, state: tauri::State<'_, AppState>) -> Result<Vec<H
         }
     }
 
-    // Step 3: Restart the monitor
+    // Step 3: Nudge the monitor to restart if needed
     #[cfg(target_os = "windows")]
     {
         use std::ffi::c_void;
@@ -803,7 +831,7 @@ fn force_sync(app: AppHandle, state: tauri::State<'_, AppState>) -> Result<Vec<H
         }
     }
 
-    // Step 4: Return fresh history
+    // Step 3: Return fresh history
     let db = get_db_path(&app);
     let items: Vec<HistoryItem> = if let Ok(conn) = Connection::open(db) {
         let mut stmt = conn.prepare("SELECT id, content, created_at, category FROM history ORDER BY id DESC")
@@ -826,8 +854,24 @@ fn force_sync(app: AppHandle, state: tauri::State<'_, AppState>) -> Result<Vec<H
 #[tauri::command] fn write_clipboard(content: String) -> Result<(), String> { write_to_clipboard_inner(&content) }
 #[tauri::command] fn get_history(app: AppHandle) -> Vec<HistoryItem> { let db=get_db_path(&app); if let Ok(c)=Connection::open(db){let mut s=c.prepare("SELECT id, content, created_at, category FROM history ORDER BY id DESC").unwrap();s.query_map([],|r|Ok(HistoryItem{id:r.get(0)?,content:r.get(1)?,created_at:r.get(2)?,category:r.get(3).unwrap_or("text".into())})).unwrap().map(|i|i.unwrap()).collect()}else{Vec::new()} }
 #[tauri::command] fn set_category(app: AppHandle, id: i64, category: String) -> Result<(), String> { let db = get_db_path(&app); Connection::open(db).map_err(|e|e.to_string())?.execute("UPDATE history SET category = ?1 WHERE id = ?2", params![category, id]).map_err(|e|e.to_string())?; Ok(()) }
-#[tauri::command] fn delete_item(app: AppHandle, id: i64) -> Result<(), String> { let db = get_db_path(&app); Connection::open(db).map_err(|e|e.to_string())?.execute("DELETE FROM history WHERE id = ?1", params![id]).map_err(|e|e.to_string())?; Ok(()) }
-#[tauri::command] fn clear_history(app: AppHandle) -> Result<(), String> { let db = get_db_path(&app); Connection::open(db).map_err(|e|e.to_string())?.execute("DELETE FROM history", []).map_err(|e|e.to_string())?; Ok(()) }
+#[tauri::command]
+fn delete_item(app: AppHandle, state: tauri::State<'_, AppState>, id: i64) -> Result<(), String> {
+    let db = get_db_path(&app);
+    let conn = Connection::open(&db).map_err(|e| e.to_string())?;
+    // Record the content signature before deleting, so force_sync won't resurrect it.
+    if let Ok(content) = conn.query_row("SELECT content FROM history WHERE id = ?1", params![id], |r| r.get::<_, String>(0)) {
+        safe_lock(&state.recently_deleted_sigs).insert(signature_for(&content));
+    }
+    conn.execute("DELETE FROM history WHERE id = ?1", params![id]).map_err(|e| e.to_string())?;
+    Ok(())
+}
+#[tauri::command]
+fn clear_history(app: AppHandle, state: tauri::State<'_, AppState>) -> Result<(), String> {
+    let db = get_db_path(&app);
+    Connection::open(db).map_err(|e| e.to_string())?.execute("DELETE FROM history", []).map_err(|e| e.to_string())?;
+    safe_lock(&state.recently_deleted_sigs).clear();
+    Ok(())
+}
 #[tauri::command] fn get_all_settings(app: AppHandle) -> HashMap<String, String> { let db = get_db_path(&app); let mut m = HashMap::new(); if let Ok(c) = Connection::open(db) { let mut s = c.prepare("SELECT key, value FROM settings").unwrap(); let rows = s.query_map([], |r| Ok((r.get::<_,String>(0)?, r.get::<_,String>(1)?))).unwrap(); for r in rows { if let Ok((k,v)) = r { m.insert(k,v); } } } m }
 #[tauri::command] fn save_setting(app: AppHandle, key: String, value: String) -> Result<(), String> { let db = get_db_path(&app); Connection::open(db).map_err(|e|e.to_string())?.execute("INSERT OR REPLACE INTO settings (key, value) VALUES (?1, ?2)", params![key, value]).map_err(|e|e.to_string())?; Ok(()) }
 #[tauri::command] fn get_local_ip() -> String { if let Ok(ip) = local_ip() { return ip.to_string(); } "127.0.0.1".to_string() }
@@ -1922,6 +1966,7 @@ pub fn run() {
         monitor_hwnd: Arc::new(Mutex::new(0)),
         #[cfg(target_os = "windows")]
         last_external_handle: Arc::new(Mutex::new(0)),
+        recently_deleted_sigs: Arc::new(Mutex::new(HashSet::new())),
     };
     tauri::Builder::default()
         .plugin(tauri_plugin_dialog::init())
