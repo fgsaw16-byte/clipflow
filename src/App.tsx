@@ -119,6 +119,34 @@ function App() {
   const isQueueModeRef = useRef(isQueueMode);
   const queueIdsRef = useRef(queueIds);
 
+  // Pull-to-refresh state (uses refs + direct DOM mutation to avoid re-renders during drag)
+  const [isRefreshing, setIsRefreshing] = useState(false);
+  const pullStartYRef = useRef<number | null>(null);
+  const pullDistanceRef = useRef(0);
+  const pullIndicatorRef = useRef<HTMLDivElement>(null);
+  const pullIconRef = useRef<HTMLDivElement>(null);
+  const pullTextRef = useRef<HTMLSpanElement>(null);
+  const PULL_THRESHOLD = 60;
+
+  const updatePullUI = (dist: number, dragging: boolean) => {
+    pullDistanceRef.current = dist;
+    const el = pullIndicatorRef.current;
+    const icon = pullIconRef.current;
+    const text = pullTextRef.current;
+    if (!el) return;
+    const t = dragging ? 'none' : 'height 0.3s ease, opacity 0.3s ease';
+    el.style.height = `${dist}px`;
+    el.style.opacity = `${Math.min(dist / PULL_THRESHOLD, 1)}`;
+    el.style.transition = t;
+    if (icon) {
+      icon.style.transform = `rotate(${(dist / PULL_THRESHOLD) * 360}deg)`;
+      icon.style.transition = dragging ? 'none' : 'transform 0.3s ease';
+    }
+    if (text) {
+      text.textContent = dist >= PULL_THRESHOLD ? '松开刷新' : '下拉刷新';
+    }
+  };
+
   const listRef = useRef<HTMLDivElement>(null); 
   const scrollPosRef = useRef(0);
   const chatEndRef = useRef<HTMLDivElement>(null);
@@ -644,7 +672,6 @@ function App() {
               })}
             </div>
             <div className="toolbar-btn" onClick={scrollToTop} style={{marginRight: '4px', display: 'flex', alignItems: 'center', justifyContent: 'center'}} title="回到顶部"><Icon name="arrow-up" size={18} /></div>
-            <div className="toolbar-btn" onClick={() => forceSync()} style={{marginRight: '4px', display: 'flex', alignItems: 'center', justifyContent: 'center'}} title="强制同步 (修复卡死)"><Icon name="refresh" size={16} /></div>
         </div>
       )}
       <div className="content-area" style={{ position: 'relative' }}>
@@ -766,6 +793,38 @@ function App() {
             className="list-wrapper"
             ref={listRef}
             onScroll={(e) => (scrollPosRef.current = e.currentTarget.scrollTop)}
+            onMouseDown={(e) => {
+              if (listRef.current && listRef.current.scrollTop <= 0) {
+                pullStartYRef.current = e.clientY;
+              }
+            }}
+            onMouseMove={(e) => {
+              if (pullStartYRef.current === null || isRefreshing) return;
+              const delta = e.clientY - pullStartYRef.current;
+              if (delta > 0 && listRef.current && listRef.current.scrollTop <= 0) {
+                e.preventDefault();
+                updatePullUI(Math.min(delta * 0.4, 100), true);
+              } else {
+                updatePullUI(0, true);
+              }
+            }}
+            onMouseUp={() => {
+              if (pullStartYRef.current !== null && pullDistanceRef.current >= PULL_THRESHOLD && !isRefreshing) {
+                setIsRefreshing(true);
+                updatePullUI(PULL_THRESHOLD, false);
+                forceSync().finally(() => {
+                  setIsRefreshing(false);
+                  updatePullUI(0, false);
+                });
+              } else {
+                updatePullUI(0, false);
+              }
+              pullStartYRef.current = null;
+            }}
+            onMouseLeave={() => {
+              if (!isRefreshing) updatePullUI(0, false);
+              pullStartYRef.current = null;
+            }}
             style={{
               ...listStyle,
               height: '100%',
@@ -773,6 +832,19 @@ function App() {
               paddingBottom: '20px'
             }}
           >
+            {/* Pull-to-refresh indicator */}
+            <div
+              ref={pullIndicatorRef}
+              className="pull-refresh-indicator"
+              style={{ height: 0, opacity: 0 }}
+            >
+              <div ref={pullIconRef} style={{ display: 'flex', alignItems: 'center' }}>
+                <RefreshCw size={18} className={isRefreshing ? 'spin' : ''} />
+              </div>
+              <span ref={pullTextRef} style={{ fontSize: 12, marginLeft: 6 }}>
+                {isRefreshing ? '刷新中...' : '下拉刷新'}
+              </span>
+            </div>
             {filteredHistory.length === 0 ? (
               <div className="empty-state"><Icon name="text" size={48} style={{opacity:0.3, marginBottom:10}} /><div>{searchText ? "无匹配" : "无记录"}</div></div>
             ) : (

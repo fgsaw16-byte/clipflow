@@ -640,7 +640,23 @@ body.dark-mode .delete-btn:hover {
 
 .action-btn svg, .filter-chip svg, .toolbar-btn svg { flex-shrink: 0; display: block; }
 
-
+/* --- Pull-to-refresh indicator --- */
+.pull-refresh-indicator {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  overflow: hidden;
+  color: #888;
+  user-select: none;
+  flex-shrink: 0;
+}
+.pull-refresh-indicator .spin {
+  animation: pullSpin 0.6s linear infinite;
+}
+@keyframes pullSpin {
+  from { transform: rotate(0deg); }
+  to { transform: rotate(360deg); }
+}
 
 /* --- 6. 其他页面 (设置/聊天/预览) --- */
 

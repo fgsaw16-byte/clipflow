@@ -1682,6 +1682,7 @@ fn run_clipboard_monitor(state: AppState, handle: AppHandle) {
     // ── 6. Message loop ───────────────────────────────────────────────────────
     // We do NOT filter by hwnd (pass None) so we can receive WM_POWERBROADCAST
     // which is broadcast to all top-level windows (including message-only ones).
+    let mut voluntary_exit = false;
     loop {
         let mut msg = MSG::default();
         let ret = unsafe { GetMessageW(&mut msg, None, 0, 0) };
@@ -1699,6 +1700,7 @@ fn run_clipboard_monitor(state: AppState, handle: AppHandle) {
             // ── Our voluntary shutdown/restart signal ──
             x if x == WM_APP => {
                 println!("[clipflow][clipboard] received WM_APP shutdown signal, exiting for restart");
+                voluntary_exit = true;
                 break;
             }
 
@@ -1794,8 +1796,12 @@ fn run_clipboard_monitor(state: AppState, handle: AppHandle) {
         let _ = DestroyWindow(hwnd);
     }
     *safe_lock(&state.monitor_hwnd) = 0;
-    state.monitor_alive.store(false, Ordering::SeqCst);
-    println!("[clipflow][clipboard] Win32 monitor thread exited cleanly");
+    // Keep monitor_alive=true on voluntary WM_APP exit so the supervisor
+    // knows it was a clean restart, not an init failure.
+    if !voluntary_exit {
+        state.monitor_alive.store(false, Ordering::SeqCst);
+    }
+    println!("[clipflow][clipboard] Win32 monitor thread exited cleanly (voluntary={})", voluntary_exit);
 }
 
 /// Non-Windows fallback: arboard polling (unchanged behaviour).
