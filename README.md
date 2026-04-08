@@ -16,7 +16,7 @@
 
 ```bash
 # 1. 克隆仓库
-git clone [https://github.com/fgsaw16-byte/clipflow.git](https://github.com/fgsaw16-byte/clipflow.git)
+git clone https://github.com/fgsaw16-byte/clipflow.git(https://github.com/fgsaw16-byte/clipflow.git)
 
 # 2. 进入目录并安装前端依赖
 cd clipflow
