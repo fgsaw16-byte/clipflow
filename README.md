@@ -51,15 +51,15 @@ ClipFlow 围绕的不是"剪贴板"本身，而是一个更完整的 **clipboard
 
 ---
 
-## Screenshots
+## 界面截图
 
 ### 主界面 — 历史记录与分类筛选
 
 <p align="center">
-  <img src="./README-assets/home.png" alt="ClipFlow 主界面：历史记录列表与分类筛选" width="100%" />
+  <img src="./README-assets/home.png" alt="ClipFlow 主界面：历史记录列表与分类筛选" width="78%" />
 </p>
 
-### Viewer — 文本编辑与图片浏览
+### 查看器 — 文本编辑与图片浏览
 
 <table>
   <tr>
@@ -76,7 +76,7 @@ ClipFlow 围绕的不是"剪贴板"本身，而是一个更完整的 **clipboard
   </tr>
 </table>
 
-### Phone Sync — 局域网手机互传
+### 手机同步 — 局域网手机互传
 
 <table>
   <tr>
@@ -100,39 +100,39 @@ ClipFlow 围绕的不是"剪贴板"本身，而是一个更完整的 **clipboard
 
 ---
 
-## Feature Overview
+## 功能概览
 
-### Clipboard history
+### 剪贴板历史
 
 - 自动捕获文本、代码、图片等剪贴板内容
 - 数据持久化到本地 SQLite
 - 支持搜索、分类浏览、编辑分类、自定义标签、删除、清空
 
-### Copy / paste workflow
+### 复制 / 粘贴工作流
 
 - 单击即可快速复制回剪贴板
 - 支持固定模式、自动粘贴、未固定时复制不隐藏
 - 支持**队列模式**，适合批量粘贴、表单录入、重复性填充工作
 
-### Viewer mode
+### 查看器模式
 
 - 文本内容支持独立查看、编辑、保存
 - 图片内容支持缩放、拖拽浏览
-- Viewer 内保留复制与翻译入口
+- 查看器内保留复制与翻译入口
 
-### Translation
+### 翻译
 
 - 全文翻译 / 还原
 - 选中片段翻译 / 取消
 - Rust 后端负责调用翻译服务，前端保持轻交互层
 
-### Phone sync
+### 手机同步
 
 - 应用内生成局域网二维码
 - 手机可通过 Web UI 接入桌面端
 - 支持文本、图片、文件收发
 
-### Settings
+### 设置
 
 - 主题模式（跟随系统 / 浅色 / 深色）
 - 队列模式与快捷键配置
@@ -140,7 +140,7 @@ ClipFlow 围绕的不是"剪贴板"本身，而是一个更完整的 **clipboard
 - 历史记录上限、文件接收位置、服务端口
 - 唤醒快捷键、开机自启、跟随鼠标指针呼出等行为开关
 
-### Stability & recovery
+### 稳定性与恢复
 
 - 休眠唤醒后的监听恢复
 - `force_sync` 手动强制同步
@@ -161,7 +161,10 @@ ClipFlow 围绕的不是"剪贴板"本身，而是一个更完整的 **clipboard
 ### Run locally
 
 ```bash
-git clone https://github.com/fgsaw16-byte/clipflow.git
+# 1. 克隆仓库
+git clone [https://github.com/fgsaw16-byte/clipflow.git](https://github.com/fgsaw16-byte/clipflow.git)
+
+# 2. 进入目录并安装前端依赖
 cd clipflow
 npm install
 npm run tauri dev
