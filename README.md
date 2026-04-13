@@ -149,20 +149,20 @@ ClipFlow 围绕的不是"剪贴板"本身，而是一个更完整的 **clipboard
 
 ---
 
-## Quick Start
+## 快速入门
 
-### Requirements
+### 环境要求
 
 - Node.js &ge; 18
 - Rust &ge; 1.70
 - Windows 10+ 开发环境
 - [Tauri v2 prerequisites](https://v2.tauri.app/start/prerequisites/)
 
-### Run locally
+### 本地运行
 
 ```bash
 # 1. 克隆仓库
-git clone [https://github.com/fgsaw16-byte/clipflow.git](https://github.com/fgsaw16-byte/clipflow.git)
+git clone https://github.com/fgsaw16-byte/clipflow.git (https://github.com/fgsaw16-byte/clipflow.git)
 
 # 2. 进入目录并安装前端依赖
 cd clipflow
@@ -170,7 +170,7 @@ npm install
 npm run tauri dev
 ```
 
-### Common commands
+### 常用命令
 
 ```bash
 # Frontend only
@@ -191,7 +191,7 @@ cargo clippy          # Lints
 
 ## Architecture
 
-### Frontend — React 19 + TypeScript
+### 前端 — React 19 + TypeScript
 
 已从单体 `App.tsx` 重构为模块化结构：
 
@@ -205,7 +205,7 @@ src/
     └── views/
 ```
 
-### Backend — Rust + Tauri v2
+### 后端 — Rust + Tauri v2
 
 SQLite 持久化 + Actix-web 手机同步 + Win32 系统集成：
 
@@ -220,20 +220,20 @@ src-tauri/src/
 └── server/      # Actix-web 手机同步
 ```
 
-**Core stack**: Tauri v2 · React 19 · TypeScript · Vite · Framer Motion · Rust · Actix-web · SQLite (`rusqlite`) · Win32 APIs
+**核心技术栈**: Tauri v2 · React 19 · TypeScript · Vite · Framer Motion · Rust · Actix-web · SQLite (`rusqlite`) · Win32 APIs
 
 ---
 
-## Project Status
+## 项目状态
 
-### Recently completed
+### 最近完成
 
 - ✅ 前后端模块化重构
 - ✅ 主题模式选择器 (Settings)
 - ✅ README 展示头部 & 截图画廊
 - ✅ 14/14 功能验证通过
 
-### Validation
+### 验证
 
 ```bash
 npx tsc --noEmit    # Frontend type check
@@ -257,7 +257,7 @@ cargo check         # Rust type check
 
 ---
 
-## Contributing
+## 贡献
 
 欢迎提交 Issue 或 PR。参与修改前建议了解：
 
