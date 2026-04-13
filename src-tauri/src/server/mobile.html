@@ -1,0 +1,255 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
+  <title>ClipFlow</title>
+  <style>
+    * { box-sizing: border-box; }
+    html, body { margin: 0; padding: 0; }
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
+      background: #EDEDED;
+      height: 100dvh;
+      overflow: hidden;
+    }
+    .app {
+      height: 100dvh;
+      display: flex;
+      flex-direction: column;
+    }
+    .header {
+      flex: 0 0 auto;
+      height: 48px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      background: #F7F7F7;
+      border-bottom: 1px solid #E1E1E1;
+      font-size: 16px;
+      font-weight: 600;
+      color: #111;
+    }
+    .messages {
+      flex: 1 1 auto;
+      overflow-y: auto;
+      padding: 12px 10px;
+    }
+    .row {
+      display: flex;
+      margin: 10px 0;
+    }
+    .row.left { justify-content: flex-start; }
+    .row.right { justify-content: flex-end; }
+    .bubble {
+      max-width: 78%;
+      padding: 10px 12px;
+      border-radius: 6px;
+      font-size: 15px;
+      line-height: 1.4;
+      color: #111;
+      word-break: break-word;
+      white-space: pre-wrap;
+    }
+    .bubble.left {
+      background: #fff;
+    }
+    .bubble.right {
+      background: #95ec69;
+    }
+    .bubble img {
+      display: block;
+      max-width: 100%;
+      border-radius: 6px;
+    }
+    .file {
+      display: flex;
+      flex-direction: column;
+      gap: 4px;
+    }
+    .file-name { font-weight: 600; }
+    .file-meta { font-size: 12px; opacity: 0.75; }
+
+    .bottom {
+      flex: 0 0 auto;
+      background: #F7F7F7;
+      border-top: 1px solid #D1D5DB;
+      padding: 8px;
+      display: flex;
+      gap: 8px;
+      align-items: flex-end;
+    }
+    .icon {
+      width: 34px;
+      height: 34px;
+      border: none;
+      background: transparent;
+      font-size: 20px;
+      line-height: 34px;
+    }
+    .input {
+      flex: 1;
+      background: #fff;
+      border: 1px solid #E5E7EB;
+      border-radius: 8px;
+      padding: 8px 10px;
+      font-size: 15px;
+      outline: none;
+    }
+    .send {
+      border: none;
+      background: #07C160;
+      color: #fff;
+      border-radius: 6px;
+      padding: 8px 12px;
+      font-size: 14px;
+      font-weight: 600;
+      display: none;
+    }
+    input[type=file] { display: none; }
+    .tip {
+      text-align: center;
+      color: #8c8c8c;
+      font-size: 13px;
+      padding: 20px 10px;
+    }
+  </style>
+</head>
+<body>
+  <div class="app">
+    <div class="header">ClipFlow</div>
+    <div class="messages" id="messages">
+      <div class="tip" id="tip">开始发送消息或文件</div>
+    </div>
+    <div class="bottom">
+      <input type="file" id="imageInput" accept="image/*" />
+      <input type="file" id="fileInput" />
+      <button class="icon" id="btnImage" title="图片">🖼️</button>
+      <button class="icon" id="btnFile" title="文件">📎</button>
+      <input class="input" id="textInput" placeholder="输入消息" />
+      <button class="send" id="sendBtn">发送</button>
+    </div>
+  </div>
+
+  <script>
+    const messages = document.getElementById('messages');
+    const tip = document.getElementById('tip');
+    const textInput = document.getElementById('textInput');
+    const sendBtn = document.getElementById('sendBtn');
+    const btnImage = document.getElementById('btnImage');
+    const btnFile = document.getElementById('btnFile');
+    const imageInput = document.getElementById('imageInput');
+    const fileInput = document.getElementById('fileInput');
+
+    function formatSize(bytes) {
+      if (!bytes && bytes !== 0) return '';
+      const k = 1024;
+      const sizes = ['B','KB','MB','GB'];
+      const i = Math.floor(Math.log(bytes) / Math.log(k));
+      return (bytes / Math.pow(k, i)).toFixed(i === 0 ? 0 : 2) + ' ' + sizes[i];
+    }
+
+    function appendMessage(msg) {
+      if (tip) tip.remove();
+
+      const row = document.createElement('div');
+      row.className = 'row ' + (msg.from === 'pc' ? 'left' : 'right');
+
+      const bubble = document.createElement('div');
+      bubble.className = 'bubble ' + (msg.from === 'pc' ? 'left' : 'right');
+
+      if (msg.type === 'image') {
+        const img = document.createElement('img');
+        img.src = msg.content;
+        bubble.appendChild(img);
+      } else if (msg.type === 'file') {
+        const box = document.createElement('div');
+        box.className = 'file';
+        const name = document.createElement('div');
+        name.className = 'file-name';
+        name.textContent = msg.filename || '文件';
+        const meta = document.createElement('div');
+        meta.className = 'file-meta';
+        meta.textContent = (msg.size ? formatSize(msg.size) : '');
+        box.appendChild(name);
+        box.appendChild(meta);
+        bubble.appendChild(box);
+      } else {
+        bubble.textContent = msg.content || '';
+      }
+
+      row.appendChild(bubble);
+      messages.appendChild(row);
+      messages.scrollTop = messages.scrollHeight;
+    }
+
+    function setSendVisible() {
+      const hasText = textInput.value.trim().length > 0;
+      sendBtn.style.display = hasText ? 'inline-block' : 'none';
+    }
+
+    textInput.addEventListener('input', setSendVisible);
+    textInput.addEventListener('keydown', (e) => {
+      if (e.key === 'Enter') {
+        e.preventDefault();
+        if (textInput.value.trim()) sendText();
+      }
+    });
+
+    btnImage.addEventListener('click', () => imageInput.click());
+    btnFile.addEventListener('click', () => fileInput.click());
+    sendBtn.addEventListener('click', sendText);
+
+    async function sendText() {
+      const text = textInput.value.trim();
+      if (!text) return;
+      textInput.value = '';
+      setSendVisible();
+      try {
+        await fetch('/send', { method: 'POST', body: text });
+      } catch (e) {
+        alert('发送失败');
+      }
+    }
+
+    imageInput.addEventListener('change', async (e) => {
+      const file = e.target.files && e.target.files[0];
+      if (!file) return;
+      try {
+        const fd = new FormData();
+        fd.append('file', file);
+        const res = await fetch('/upload_image', { method: 'POST', body: fd });
+        if (!res.ok) throw new Error('上传失败');
+      } catch (err) {
+        alert('图片上传失败');
+      } finally {
+        e.target.value = '';
+      }
+    });
+
+    fileInput.addEventListener('change', async (e) => {
+      const file = e.target.files && e.target.files[0];
+      if (!file) return;
+      const fd = new FormData();
+      fd.append('file', file);
+      try {
+        const res = await fetch('/upload_file', { method: 'POST', body: fd });
+        if (!res.ok) throw new Error('上传失败');
+      } catch (err) {
+        alert('文件上传失败');
+      } finally {
+        e.target.value = '';
+      }
+    });
+
+    // Single source of truth: SSE
+    const es = new EventSource('/events');
+    es.addEventListener('clipboard-update', (e) => {
+      try {
+        const msg = JSON.parse(e.data);
+        appendMessage(msg);
+      } catch (_) {}
+    });
+  </script>
+</body>
+</html>

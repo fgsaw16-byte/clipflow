@@ -8,13 +8,71 @@ ClipFlow is a Windows-first desktop clipboard manager built with **Tauri v2** (R
 
 ```
 clipflow/
-├── src/                   # Frontend — TypeScript + React 19
-│   ├── App.tsx            # All UI logic (single component, ~824 lines)
-│   ├── App.css            # All styles (~1361 lines, single stylesheet)
-│   └── main.tsx           # React entry point
-├── src-tauri/             # Backend — Rust
-│   ├── src/lib.rs         # All business logic (~1613 lines)
-│   ├── src/main.rs        # Entry point — calls lib::run()
+├── src/                   # Frontend — TypeScript + React 19 (modularized)
+│   ├── App.tsx            # Frontend composition root (~223 lines)
+│   ├── App.css            # All styles (~1377 lines, single stylesheet)
+│   ├── main.tsx           # React entry point
+│   ├── types/
+│   │   └── index.ts       # Shared frontend types: HistoryItem, ChatMessage, ViewType
+│   ├── constants/
+│   │   └── index.ts       # TAB_ORDER, CATEGORIES
+│   ├── lib/
+│   │   └── window.ts      # Tauri appWindow singleton
+│   ├── utils/
+│   │   ├── format.ts      # getTruncatedText(), formatTime()
+│   │   └── Icon.tsx       # Local icon wrapper component
+│   ├── api/
+│   │   ├── history.ts     # History CRUD invoke wrappers
+│   │   ├── paste.ts       # Clipboard / queue invoke wrappers
+│   │   ├── settings.ts    # Settings + file path invoke wrappers
+│   │   └── sync.ts        # Force sync / phone sync / translate invoke wrappers
+│   ├── hooks/
+│   │   ├── useToast.ts            # Toast state + showToast()
+│   │   ├── useSettings.ts         # Settings loading, theme apply, auto-start, folder picker
+│   │   ├── useTabAnimation.ts     # activeTab/renderTab/listStyle tab state machine
+│   │   ├── useTranslations.ts     # Translation state + selection translation actions
+│   │   ├── useViewer.ts           # Viewer zoom/pan/edit/save behaviors
+│   │   ├── useClipboardController.ts # History loading, copy/paste/delete/queue/forceSync
+│   │   ├── usePullRefresh.ts      # Pull-to-refresh refs + DOM interaction handlers
+│   │   └── useClipboardEvents.ts  # listen() subscriptions, focus sync, global mouseup
+│   ├── components/
+│   │   ├── Toast.tsx       # Toast overlay
+│   │   ├── DeleteModal.tsx # Clear-all confirmation modal
+│   │   ├── FilterBar.tsx   # Category tabs + scroll-to-top control
+│   │   ├── Toolbar.tsx     # Top toolbar / search / navigation shell
+│   │   ├── HistoryCard.tsx # Single history item card
+│   │   ├── HistoryList.tsx # History list + pull-refresh container
+│   │   └── views/
+│   │       ├── HomeView.tsx     # Main history screen
+│   │       ├── ViewerView.tsx   # Detail / image / text viewer
+│   │       ├── ChatView.tsx     # Phone sync chat screen
+│   │       └── SettingsView.tsx # Settings screen (includes theme mode select)
+│   ├── assets/
+│   │   └── react.svg       # Vite default asset
+│   └── vite-env.d.ts       # Vite type declarations
+├── src-tauri/             # Backend — Rust (multi-module)
+│   ├── src/
+│   │   ├── main.rs        # Entry point — calls lib::run() (3 lines)
+│   │   ├── lib.rs         # mod declarations + run() bootstrap (~143 lines)
+│   │   ├── state.rs       # AppState, HistoryItem, safe_lock, CREATE_NO_WINDOW
+│   │   ├── db.rs          # SQLite helpers: get_db_path, init_db, detect_category, signature_for, read_setting_sync
+│   │   ├── window.rs      # Window positioning + system tray: position_window, position_window_at_mouse, build_tray
+│   │   ├── clipboard/
+│   │   │   ├── mod.rs     # Re-exports
+│   │   │   ├── operations.rs  # read/write helpers: write_to_clipboard_inner, write_image_bytes_to_clipboard, read_and_persist_clipboard
+│   │   │   ├── monitor.rs     # Win32 message loop + non-Windows polling: run_clipboard_monitor
+│   │   │   └── supervisor.rs  # Auto-restart loop: spawn_clipboard_supervisor
+│   │   ├── commands/
+│   │   │   ├── mod.rs     # pub use * re-exports all 23 Tauri commands
+│   │   │   ├── history.rs # get_history, delete_item, clear_history, set_category, update_history_content
+│   │   │   ├── paste.rs   # write_clipboard, smart_copy, trigger_paste, paste_item, set_queue, paste_queue_next, copy_image_to_clipboard
+│   │   │   ├── settings.rs# get_all_settings, save_setting, get_file_save_path, set_save_path
+│   │   │   └── sync.rs    # force_sync, restart_clipboard_monitor, send_to_phone, translate_text, get_local_ip, upload_file
+│   │   └── server/
+│   │       ├── mod.rs     # configure_server() + re-exports broadcast_event
+│   │       ├── handlers.rs# sse_events, broadcast_event, receive_file, receive_image, receive_data, get_configured_save_path, ensure_unique_path
+│   │       ├── mobile_ui.rs # web_home handler (uses include_str!("mobile.html"))
+│   │       └── mobile.html  # Phone sync web UI (~255 lines)
 │   ├── Cargo.toml         # Rust dependencies
 │   ├── tauri.conf.json    # App configuration (window, bundle, CSP)
 │   └── capabilities/      # Tauri permission grants
@@ -101,12 +159,87 @@ cargo clippy
 
 ## Architecture
 
-- **Frontend**: Single `App.tsx` component (~824 lines) with all views (home, chat, settings, viewer) and state. No sub-components.
-- **Backend**: Single `lib.rs` (~1613 lines) with all Tauri commands, background threads, and the built-in Actix-web HTTP server.
+- **Frontend**: Modular React app with a thin `App.tsx` composition root (~223 lines). Business logic is split across `hooks/`, Tauri invoke wrappers live in `api/`, shared types/constants live in `types/` + `constants/`, and UI is split between reusable `components/` and top-level screen components in `components/views/`. `App.css` remains the single global stylesheet.
+- **Backend**: Multi-module Rust system across 15 files under `src-tauri/src/`. `lib.rs` (~143 lines) contains only module declarations and `run()`. Business logic is split into `state.rs` (types), `db.rs` (SQLite), `window.rs` (tray/window), `clipboard/` (monitoring + read/write), `commands/` (23 Tauri commands), and `server/` (Actix-web HTTP server for phone sync).
 - **State**: `AppState` struct wrapped in `Arc<Mutex<T>>`, injected via Tauri's `.manage()` and Actix-web's `web::Data`.
 - **Persistence**: SQLite (`rusqlite`) — one `history.db` file with `history` and `settings` tables.
 - **Background threads**: clipboard monitor (polls every 500 ms), Win32 foreground-window radar (polls every 250 ms), Actix-web HTTP server (port 19527 for phone-to-PC sync via SSE).
 - **Frontend↔Backend bridge**: `invoke()` for frontend→Rust calls; `emit()` for Rust→frontend events.
+
+### Frontend Module Reference
+
+Quick-lookup table for agents working on the React/TypeScript frontend. All files are under `src/`.
+
+| File / Dir | Responsibility | Key symbols |
+|---|---|---|
+| `App.tsx` | Composition root that wires hooks, cross-view state, and top-level routing | `App` |
+| `types/index.ts` | Shared frontend types | `HistoryItem`, `ChatMessage`, `ViewType` |
+| `constants/index.ts` | Shared UI constants | `TAB_ORDER`, `CATEGORIES` |
+| `lib/window.ts` | Shared Tauri window singleton | `appWindow` |
+| `utils/format.ts` | Display formatting helpers | `getTruncatedText()`, `formatTime()` |
+| `utils/Icon.tsx` | Local icon mapping wrapper | `Icon` |
+| `api/history.ts` | History-related invoke wrappers | `getHistory`, `deleteItem`, `clearHistory`, `setCategory`, `updateHistoryContent` |
+| `api/paste.ts` | Clipboard / paste / queue invoke wrappers | `smartCopy`, `pasteItem`, `setQueue`, `pasteQueueNext` |
+| `api/settings.ts` | Settings invoke wrappers | `getAllSettings`, `saveSetting`, `getFileSavePath`, `setSavePath` |
+| `api/sync.ts` | Sync / translate invoke wrappers | `forceSync`, `sendToPhone`, `translateText`, `getLocalIp` |
+| `hooks/useToast.ts` | Toast message state | `useToast` |
+| `hooks/useSettings.ts` | Settings bootstrapping, theme application, auto-start, folder picking | `useSettings`, `applyTheme` |
+| `hooks/useTabAnimation.ts` | Tab animation state machine | `useTabAnimation` |
+| `hooks/useTranslations.ts` | Translation state and translation actions | `useTranslations` |
+| `hooks/useViewer.ts` | Viewer interaction state (zoom/pan/edit/save) | `useViewer` |
+| `hooks/useClipboardController.ts` | Main history/clipboard orchestration hook | `useClipboardController` |
+| `hooks/usePullRefresh.ts` | Pull-to-refresh refs and mouse handlers | `usePullRefresh` |
+| `hooks/useClipboardEvents.ts` | Tauri event listeners and global side effects | `useClipboardEvents` |
+| `components/Toolbar.tsx` | Top toolbar shared across views | `Toolbar` |
+| `components/HistoryList.tsx` | History list rendering and scroll registration | `HistoryList` |
+| `components/HistoryCard.tsx` | Individual history card interactions | `HistoryCard` |
+| `components/views/HomeView.tsx` | Main history page composition | `HomeView` |
+| `components/views/ViewerView.tsx` | Viewer page composition | `ViewerView` |
+| `components/views/ChatView.tsx` | Phone sync / chat page composition | `ChatView` |
+| `components/views/SettingsView.tsx` | Settings page composition | `SettingsView` |
+
+- To change toolbar/search/navigation behavior: edit `components/Toolbar.tsx` and its props in `App.tsx`
+- To change list rendering or card interactions: start with `components/HistoryList.tsx` and `components/HistoryCard.tsx`
+- To change clipboard/history actions: start with `hooks/useClipboardController.ts`, then check `api/`
+- To change settings/theme behavior: start with `hooks/useSettings.ts`, then `components/views/SettingsView.tsx`
+- To change viewer zoom/edit/translate behavior: read `hooks/useViewer.ts` and `hooks/useTranslations.ts` together
+
+---
+
+## Backend Module Reference
+
+Quick-lookup table for agents working on the Rust backend. All files are under `src-tauri/src/`.
+
+| File | Responsibility | Key symbols |
+|------|---------------|-------------|
+| `lib.rs` | Bootstrap: mod declarations, `run()`, plugin registration, foreground radar thread | `run()` |
+| `state.rs` | Core types and shared state primitives | `AppState`, `HistoryItem`, `safe_lock()`, `CREATE_NO_WINDOW` |
+| `db.rs` | All SQLite operations and content utilities | `get_db_path()`, `init_db()`, `detect_category()`, `signature_for()`, `read_setting_sync()` |
+| `window.rs` | Window positioning and system tray construction | `position_window()`, `position_window_at_mouse()`, `build_tray()` |
+| `clipboard/operations.rs` | Clipboard read/write and persistence to DB | `write_to_clipboard_inner()`, `write_image_bytes_to_clipboard()`, `read_and_persist_clipboard()` |
+| `clipboard/monitor.rs` | Win32 message loop (Windows) + polling fallback (non-Windows) | `run_clipboard_monitor()` |
+| `clipboard/supervisor.rs` | Crash-detection loop that restarts the monitor | `spawn_clipboard_supervisor()` |
+| `commands/history.rs` | Tauri commands for history CRUD | `get_history`, `delete_item`, `clear_history`, `set_category`, `update_history_content` |
+| `commands/paste.rs` | Tauri commands for paste operations; Win32 `AttachThreadInput` FFI lives here | `write_clipboard`, `smart_copy`, `trigger_paste`, `paste_item`, `set_queue`, `paste_queue_next`, `copy_image_to_clipboard` |
+| `commands/settings.rs` | Tauri commands for app settings and file paths | `get_all_settings`, `save_setting`, `get_file_save_path`, `set_save_path` |
+| `commands/sync.rs` | Tauri commands for sync, clipboard recovery, translation | `force_sync`, `restart_clipboard_monitor`, `send_to_phone`, `translate_text`, `get_local_ip`, `upload_file` |
+| `server/handlers.rs` | Actix-web handlers for phone sync; SSE event stream and file/image/data receive | `sse_events`, `broadcast_event`, `receive_file`, `receive_image`, `receive_data` |
+| `server/mobile_ui.rs` | Actix-web handler serving the phone web UI | `web_home` (uses `include_str!("mobile.html")`) |
+| `server/mobile.html` | Self-contained HTML for the phone sync web interface | (static HTML, ~255 lines) |
+
+### Module Dependency Order (bottom-up)
+
+```
+state  ←  db  ←  clipboard/*  ←  commands/*
+                              ←  server/*
+window  (standalone, only depends on tauri + windows crate)
+lib.rs  (depends on everything, orchestrates run())
+```
+
+- To find a Tauri command: search by command name in `commands/`
+- To modify clipboard capture logic: edit `clipboard/operations.rs` or `clipboard/monitor.rs`
+- To change the phone UI: edit `server/mobile.html`
+- To add a new Tauri command: add to the appropriate `commands/*.rs` file, then add to `generate_handler![]` in `lib.rs`
 
 ---
 
@@ -234,93 +367,11 @@ fn example(state: tauri::State<AppState>) -> Result<Vec<HistoryItem>, String> {
 - **No linter/formatter is configured**: Run `npx tsc --noEmit` and `cargo check` to validate changes before finishing.
 - **CSP is disabled** (`"csp": null` in `tauri.conf.json`) — do not enable it without testing the phone sync UI.
 - **Vite dev server requires port 1420** (`strictPort: true`) — ensure the port is free before running `npm run dev`.
-- **The mobile UI is an embedded HTML string** inside `lib.rs` — editing it requires finding the raw string literal and maintaining its structure.
+- **The mobile UI HTML** lives in `src-tauri/src/server/mobile.html` — edit that file directly. It is compiled into the binary via `include_str!()` in `server/mobile_ui.rs`.
 - **No tests exist** — manually verify behavior after changes, especially around clipboard monitoring and the Actix-web server.
 
 ---
 
 ## Change Log
 
-### 2026-03-23: Deadlock / 死锁深度修复
-
-**改动原因**
-
-将剪贴板监听从定时轮询重构为 Win32 `AddClipboardFormatListener` 后，电脑闲置约 20 分钟（经历息屏/休眠）后出现致命症状：
-1. 后台剪贴板监听彻底失效，不再捕获任何新内容。
-2. 前端 `invoke()` 调用（包括下拉刷新 `get_history`）完全卡死，拿不到返回值。
-
-**根因诊断（三杀组合）**
-
-| # | 杀手 | 机制 |
-|---|---|---|
-| 1 | `GetMessageW` 僵死 | 休眠唤醒后，`HWND_MESSAGE` 消息窗口的消息链被系统掐断。`GetMessageW` 永远阻塞，但线程没有 panic，`monitor_alive` 仍为 `true`，supervisor 不会重启。 |
-| 2 | `skip_monitor` 泄漏 | `receive_image` 设置 `skip_monitor = true` 后 spawn 子线程写剪贴板，如果该子线程 panic（休眠后剪贴板句柄失效），`release_monitor()` 不执行，`skip_monitor` 永远卡在 `true`。 |
-| 3 | Mutex 毒化静默失败 | `restart_clipboard_monitor` 使用 `.lock().map().unwrap_or(0)`，锁被毒化时拿到 0，什么都不做。前端调用该命令无法真正重启监听。 |
-
-**改动内容**
-
-#### Rust 后端 (`src-tauri/src/lib.rs`)
-
-1. **新增 `safe_lock()` 辅助函数**
-   - 使用 `.unwrap_or_else(|poisoned| poisoned.into_inner())` 从毒化锁中恢复数据。
-   - 所有关键路径的 `.lock()` 调用（`restart_clipboard_monitor`、`read_and_persist_clipboard`、supervisor 清理、`receive_image` 子线程）已替换为 `safe_lock()`。
-
-2. **`receive_image` 子线程加 `catch_unwind` 保护**
-   - 整个剪贴板写入逻辑用 `panic::catch_unwind` 包裹。
-   - 无论正常退出、返回错误、还是 panic，都保证执行 `release_monitor()` 清除 `skip_monitor` 和 `last_clipboard_write_ms`。
-
-3. **`restart_clipboard_monitor` 命令增强**
-   - 调用时主动清除 `skip_monitor`、`last_clipboard_write_ms`、`is_internal_pasting` 三个抑制标志。
-   - 若 HWND 为 0（监听器已死），主动将 `monitor_alive` 设为 `false`，让 supervisor 感知并重启。
-
-4. **`run_clipboard_monitor` 消息循环重写**
-   - 新增 `WM_POWERBROADCAST` 处理：检测 `PBT_APMRESUMEAUTOMATIC` / `PBT_APMRESUMESUSPEND`，自动执行 `RemoveClipboardFormatListener` → `AddClipboardFormatListener` 重注册，重建 arboard 实例，重置 sequence tracking，清除所有卡死标志，并立即读取一次剪贴板。
-   - 新增 30 秒心跳定时器（`SetTimer` / `WM_TIMER`）：每 30 秒通过 `GetClipboardSequenceNumber` 对比检测是否有漏掉的剪贴板变更（对抗 `GetMessageW` 僵死）；同时清除超过 5 秒的 stuck `skip_monitor`。
-   - `GetMessageW` 不再过滤 hwnd（传 `None`），以便接收 `WM_POWERBROADCAST` 广播消息。
-   - 清理阶段增加 `KillTimer`。
-
-5. **新增 `force_sync` Tauri command**
-   - 一键清除所有抑制标志（`skip_monitor`、`last_clipboard_write_ms`、`is_internal_pasting`、`ignore_signature`）。
-   - 独立于监听线程，直接用新的 arboard 实例读取当前剪贴板内容并持久化。
-   - 向监听窗口发 `WM_APP` 触发重启（或设 `monitor_alive=false` 让 supervisor 重生）。
-   - 返回最新历史记录，前端可直接用返回值更新 UI。
-   - 已注册到 `invoke_handler` 的 `generate_handler![]` 中。
-
-6. **supervisor 清理代码**
-   - 所有 `if let Ok(mut x) = lock()` 替换为 `safe_lock()`。
-   - 增加 `is_internal_pasting` 的清理。
-
-#### 前端 (`src/App.tsx`)
-
-1. **新增 `forceSync()` 函数** — 调用后端 `force_sync`，失败时 fallback 到 `get_history`。
-2. **监听 `listener-crashed` 事件** — 后端监听器崩溃时自动调用 `forceSync()` 恢复。
-3. **窗口获焦自动同步** — `appWindow.onFocusChanged` 中，获得焦点时调用 `forceSync()`（覆盖休眠唤醒后用户首次呼出窗口的场景）。
-4. **Filter 栏新增刷新按钮** — 在 "回到顶部" 按钮旁边新增 `<Icon name="refresh">` 按钮，点击调用 `forceSync()`，标题为 "强制同步 (修复卡死)"。
-
-**未修改的部分**
-
-- 所有 framer-motion 动画（卡片 spring 入场/退场、tab 滑块、删除弹窗、hover/tap 缩放）完全未触碰。
-- UI 结构（toolbar、filter-bar、content-area、viewer、chat、settings 布局）未改变。
-- Actix-web 服务器、SQLite 数据库操作、快捷键系统均未修改。
-
-**验证结果**
-
-- `cargo check` — 通过（仅 1 个预存的 dead_code warning）。
-- `npx tsc --noEmit` — 通过，无错误。
-
-**潜在问题与后续观察点**
-
-| 风险 | 说明 | 后续对策 |
-|---|---|---|
-| `WM_POWERBROADCAST` 可能不送达 `HWND_MESSAGE` 窗口 | 微软文档对 message-only window 能否收到广播消息描述模糊。如果收不到，心跳定时器是最后防线。 | 测试休眠唤醒场景，观察日志中是否有 `⚡ System resumed` 输出。若没有，考虑改用普通隐藏窗口替代 `HWND_MESSAGE`。 |
-| `forceSync` 在窗口获焦时频繁调用 | 每次 Alt+V 呼出窗口都会调用一次 `force_sync`，产生一次 SQLite 查询 + 可能的 `PostMessageW`。 | 目前性能影响可忽略（<5ms）。若发现卡顿，加一个 2 秒节流。 |
-| 心跳定时器 30 秒间隔 | 极端情况下，休眠唤醒后最多需要 30 秒才能自动恢复。 | 用户可通过刷新按钮或 Alt+V 立即触发 `forceSync`。如果 30 秒太长，可改为 10 秒。 |
-| 非 Windows 平台未测试 | 所有 Win32 改动都在 `#[cfg(target_os = "windows")]` 内，非 Windows 的 polling fallback 未修改。 | 目前 ClipFlow 是 Windows-only 产品，暂不影响。 |
-
-**如果问题仍未解决**
-
-下次排查时直接阅读本段即可衔接。重点关注：
-1. 运行 `npm run tauri dev`，闲置 20 分钟后，检查终端日志中是否有 `⚡ System resumed` 或 `⚠️ Heartbeat detected missed clipboard change`。
-2. 如果日志中都没有出现，说明 `WM_POWERBROADCAST` 和 `WM_TIMER` 都没送达 → 需要将 `HWND_MESSAGE` 改为普通隐藏窗口（`WS_EX_TOOLWINDOW` + `ShowWindow(SW_HIDE)`）。
-3. 如果心跳日志正常但剪贴板仍不工作，检查 arboard `Clipboard::new()` 在休眠后是否始终失败 → 可能需要延迟重试或切换到纯 Win32 `OpenClipboard` API。
-4. 如果前端 `invoke` 仍然卡死，说明问题不在 Rust 锁，而在 Tauri IPC 层 → 检查 WebView2 进程是否被系统挂起。
+详细修改日志已迁移至 [CHANGELOG.md](./CHANGELOG.md)。
